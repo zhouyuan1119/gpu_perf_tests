@@ -15,6 +15,7 @@ def parse_args():
     parser = deepspeed.add_config_arguments(parser)
 
     args, _ = parser.parse_known_args()
+
     return args
 
 def train_multi_gpu_ds(args, model_engine: deepspeed.DeepSpeedEngine, warmup=5, n_batches=10):
@@ -66,6 +67,9 @@ if __name__ == '__main__':
     args = parse_args()
     deepspeed_config = json.load(
         open(args.deepspeed_config, 'r', encoding='utf-8'))
+    # Fix random seed for all processes
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     # Initialize deepspeed env
     deepspeed.init_distributed(dist_backend='nccl')
