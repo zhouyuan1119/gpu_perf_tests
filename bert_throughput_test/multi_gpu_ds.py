@@ -68,8 +68,8 @@ if __name__ == '__main__':
     deepspeed_config = json.load(
         open(args.deepspeed_config, 'r', encoding='utf-8'))
     # Fix random seed for all processes
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
     # Initialize deepspeed env
     deepspeed.init_distributed(dist_backend='nccl')

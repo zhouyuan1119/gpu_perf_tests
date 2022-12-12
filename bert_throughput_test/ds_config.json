@@ -18,9 +18,9 @@
   "prescale_gradients": false,
   "fp16": {
       "enabled": true,
-      "loss_scale": 0,
+      "loss_scale": 1,
       "loss_scale_window": 1000,
-      "initial_scale_power": 20
+      "initial_scale_power": 1
   },
   "wall_clock_breakdown": true,
   "zero_optimization": {
