@@ -1,27 +1,28 @@
 """ HuggingFace BERT training with fake data """
 
-import deepspeed
 import json
-import os
 import time
 import torch
 
 import torch.nn as nn
-import deepspeed.comm as dist
 
 from fake_dataset import FakeDataset
 from utils import build_model, get_parser, rough_flops, write_csv
+from patrickstar.runtime import initialize_engine
+from patrickstar.utils import get_rank
+from torch.utils.data import DataLoader
+
 
 def parse_args():
     parser = get_parser()
-    parser = deepspeed.add_config_arguments(parser)
-
     args, _ = parser.parse_known_args()
 
     return args
 
-def train_multi_gpu_ds(args, model_engine: deepspeed.DeepSpeedEngine, train_loader, warmup=5, n_batches=10):
-    if model_engine.local_rank == 0:
+def train_multi_gpu_pstar(args, model_engine, optim, train_loader, warmup=5, n_batches=10):
+    local_rank = get_rank()
+    device = torch.device(f"cuda:{local_rank}")
+    if local_rank == 0:
         print('Start training!')
     criterion = nn.CrossEntropyLoss()
     for i, data in enumerate(train_loader):
@@ -29,18 +30,17 @@ def train_multi_gpu_ds(args, model_engine: deepspeed.DeepSpeedEngine, train_load
             break
         if i == warmup:
             start = time.time()
-        inputs, labels = data[0].to(model_engine.local_rank), data[1].to(
-            model_engine.local_rank)
+        optim.zero_grad()
+        inputs, labels = data[0].to(device), data[1].to(device)
         outputs = model_engine(inputs).logits
         loss = criterion(outputs, labels)
         model_engine.backward(loss)
-        model_engine.step()
+        optim.step()
     end = time.time()
-    dist.log_summary()
 
-    if model_engine.local_rank == 0:
+    if local_rank == 0:
         print('Done!')
-    if model_engine.local_rank == 0:
+    if local_rank == 0:
         print('Max memory allocated in MBs: ', torch.cuda.max_memory_allocated() / (1024*1024))
         print('Total time in seconds: ', end - start)
     avg = (end - start) / n_batches
@@ -60,15 +60,14 @@ def train_multi_gpu_ds(args, model_engine: deepspeed.DeepSpeedEngine, train_load
 if __name__ == '__main__':
     # Parse args
     args = parse_args()
-    deepspeed_config = json.load(
-        open(args.deepspeed_config, 'r', encoding='utf-8'))
+    config = json.load(open(args.config, 'r', encoding='utf-8'))
     # Fix random seed for all processes
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
 
-    # Initialize deepspeed env
-    deepspeed.init_distributed(dist_backend='nccl')
-    args.local_rank = int(os.environ['LOCAL_RANK'])
+    # Initialize PatrickStar env
+    torch.distributed.init_process_group(backend='nccl')
+    torch.cuda.set_device(get_rank())
 
     # Initialize fake data, model and optimizer
     dataset = FakeDataset(
@@ -78,17 +77,22 @@ if __name__ == '__main__':
         (0, 32003),
         10
     )
-    model = build_model(args)
-    trainable_params = filter(lambda p: p.requires_grad, model.parameters())
-    model_engine, _, train_loader, _ = deepspeed.initialize(
-        args=args, 
-        model=model,
-        model_parameters=trainable_params,
-        training_data=dataset
+    train_loader = DataLoader(
+        dataset, 
+        batch_size=args.bs, 
+        shuffle=True)
+
+    # PatrickStar requires we wrap the model with a function
+    def model_func():
+        return build_model(args)
+
+    model, optim = initialize_engine(
+        model_func=model_func, local_rank=get_rank(), config=config
     )
 
-    res_dict = train_multi_gpu_ds(args, model_engine, train_loader)
-    if model_engine.local_rank == 0:
+    # Start training
+    res_dict = train_multi_gpu_pstar(args, model, optim, train_loader)
+    if get_rank() == 0:
         write_csv(res_dict, args.csv_file)
         print('Test done!')
     
