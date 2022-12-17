@@ -26,6 +26,8 @@ def train_multi_gpu_pstar(args, model_engine, optim, train_loader, warmup=5, n_b
         print('Start training!')
     criterion = nn.CrossEntropyLoss()
     for i, data in enumerate(train_loader):
+        if local_rank == 0:
+            print('Batch ', i)
         if i == warmup + n_batches:
             break
         if i == warmup:

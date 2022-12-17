@@ -18,7 +18,23 @@
       "loss_scale_window": 1000,
       "initial_scale_power": 1
   },
-  "default_chunk_size": 134217728,
+  "default_chunk_size": 268435456,
   "release_after_init": false,
-  "use_cpu_embedding": false
+  "use_cpu_embedding": false,
+  "client": {
+      "mem_tracer": {
+          "use_async_mem_monitor": true,
+          "warmup_gpu_chunk_mem_ratio": 0.1,
+          "overall_gpu_mem_ratio": 0.9,
+          "overall_cpu_mem_ratio": 0.9,
+          "margin_use_ratio": 0.8,
+          "use_fake_dist": false,
+          "with_static_partition": false
+      },
+      "opts": {
+          "with_mem_saving_comm": true,
+          "with_mem_cache": true,
+          "with_async_move": false
+      } 
+  }
 }
